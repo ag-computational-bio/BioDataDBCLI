@@ -1,0 +1,4 @@
+Config:
+  GRPCEndpoint:
+    Host: localhost
+    Port: 9000
