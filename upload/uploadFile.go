@@ -12,9 +12,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/ag-computational-bio/BioDataDBModels/go/datasetentrymodels"
+
+	"github.com/ag-computational-bio/BioDataDBModels/go/commonmodels"
+
+	"github.com/ag-computational-bio/BioDataDBModels/go/datasetapimodels"
 
 	"github.com/ag-computational-bio/BioDataDBModels/go/api"
-	"github.com/ag-computational-bio/BioDataDBModels/go/commonmodels"
 	"github.com/ag-computational-bio/BioDataDBModels/go/loadmodels"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -24,13 +30,15 @@ import (
 )
 
 // Chunksize Default size of the uploaded chunks in multipart upload
-const Chunksize = 1024 * 1024 * 5
+const Chunksize = 1024 * 1024 * 10
 
 // Handler Handles file upload
 type Handler struct {
-	LoadHandler        api.LoadServiceClient
-	DefaultGRPCContext context.Context
-	Token              string
+	LoadHandler          api.LoadServiceClient
+	DatasetObjectHandler api.ObjectsServiceClient
+	DatasetHandler       api.DatasetServiceClient
+	DefaultGRPCContext   context.Context
+	Token                string
 }
 
 // New Creates a new upload handler
@@ -74,34 +82,121 @@ func New(token string) (*Handler, error) {
 	loadClient := api.NewLoadServiceClient(conn)
 	handler.LoadHandler = loadClient
 
+	objectClient := api.NewObjectsServiceClient(conn)
+	handler.DatasetObjectHandler = objectClient
+
+	datasetClient := api.NewDatasetServiceClient(conn)
+	handler.DatasetHandler = datasetClient
+
 	return &handler, nil
 }
 
+// Upload Uploads a file
+// Files larger than 10MB will be uploaded as multipart upload
+// All uploads are performed using presigned links from the database backend
+func (handler *Handler) Upload(token string, uploadFilePaths []string, datasetID string, datasetVersionID string) error {
+
+	request := &datasetapimodels.CreateDatasetObjectGroupRequest{
+		DatasetID: datasetID,
+		Name:      "Test",
+		Version: &commonmodels.Version{
+			Major:    0,
+			Minor:    2,
+			Patch:    0,
+			Revision: 0,
+			Stage:    commonmodels.Version_Stable,
+		},
+		DatasetVersionID: []string{datasetVersionID},
+	}
+
+	objectGroup, err := handler.DatasetObjectHandler.CreateDatsetObjectGroup(handler.OutGoingContext(), request)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+
+	uploadHandler, err := New(token)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+
+	for _, uploadFilePath := range uploadFilePaths {
+		file, err := os.Open(uploadFilePath)
+		if err != nil {
+			log.Println(err.Error())
+			return err
+		}
+
+		fileinfo, err := file.Stat()
+		if err != nil {
+			log.Println(err.Error())
+			return err
+		}
+
+		if fileinfo.Size() > int64(MinMultipartUploadSize) {
+			err = uploadHandler.UploadFileMultipart(file, objectGroup.GetID())
+			if err != nil {
+				log.Println(err.Error())
+				return err
+			}
+		} else {
+			err = uploadHandler.UploadFile(file, objectGroup.GetID())
+			if err != nil {
+				log.Println(err.Error())
+				return err
+			}
+		}
+	}
+
+	statusUpdate := datasetapimodels.StatusUpdate{
+		ID:     datasetVersionID,
+		Status: datasetentrymodels.Status_Available,
+	}
+
+	_, err = handler.DatasetHandler.UpdateDatasetVersionStatus(handler.OutGoingContext(), &statusUpdate)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+
+	updateCurrentDatasetVersion := datasetapimodels.UpdateCurrentDatasetVersionRequest{
+		ID:             datasetID,
+		TargetResource: commonmodels.Resource_DatasetVersion,
+		UpdateTargetID: datasetVersionID,
+		UpdateStage:    commonmodels.Stage_Stable,
+	}
+
+	_, err = handler.DatasetHandler.UpdateCurrentDatasetVersion(handler.OutGoingContext(), &updateCurrentDatasetVersion)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+
+	return nil
+}
+
 // UploadFile Uploads a single file with a single put command from a presigned url into object storage
-func (handler *Handler) UploadFile(uploadFile *os.File, datasetVersion string) error {
+func (handler *Handler) UploadFile(uploadFile *os.File, datasetObjectGroupID string) error {
 	stat, err := uploadFile.Stat()
 	if err != nil {
 		log.Println(err.Error())
 		return err
 	}
 
+	ext := filepath.Ext(stat.Name())
+
 	initUploadRequest := loadmodels.CreateUploadLinkRequest{
-		DatasetVersionID: datasetVersion,
-		ContentLen:       stat.Size(),
-		Created:          timestamppb.Now(),
-		Filename:         filepath.Base(uploadFile.Name()),
-		Filetype:         "bin",
-		Name:             filepath.Base(uploadFile.Name()),
-		Version: &commonmodels.Version{
-			Major:    1,
-			Minor:    0,
-			Patch:    0,
-			Revision: 0,
-			Stage:    commonmodels.Version_Stable,
+		CreateDatasetObjectRequest: &loadmodels.CreateDatasetObjectRequest{
+			ContentLen: stat.Size(),
+			Created:    timestamppb.Now(),
+			Filename:   stat.Name(),
+			Filetype:   ext,
 		},
+		DatasetObjectGroupID: datasetObjectGroupID,
 	}
 
-	response, err := handler.LoadHandler.CreateUploadLink(handler.OutGoingContext(), &initUploadRequest)
+	response, err := handler.LoadHandler.GetUploadLink(handler.OutGoingContext(), &initUploadRequest)
 	if err != nil {
 		log.Println(err.Error())
 		return err
@@ -132,7 +227,7 @@ func (handler *Handler) UploadFile(uploadFile *os.File, datasetVersion string) e
 }
 
 // UploadFileMultipart Uploads the file
-func (handler *Handler) UploadFileMultipart(uploadFile *os.File, datasetVersion string) error {
+func (handler *Handler) UploadFileMultipart(uploadFile *os.File, datasetObjectGroupID string) error {
 	defer println()
 
 	stat, err := uploadFile.Stat()
@@ -141,22 +236,18 @@ func (handler *Handler) UploadFileMultipart(uploadFile *os.File, datasetVersion 
 		return err
 	}
 
+	ext := filepath.Ext(stat.Name())
+
 	fileSize := stat.Size()
 
 	initUploadRequest := loadmodels.InitMultipartUploadRequest{
-		DatasetVersionID: datasetVersion,
-		ContentLen:       stat.Size(),
-		Created:          timestamppb.Now(),
-		Filename:         filepath.Base(uploadFile.Name()),
-		Filetype:         "bin",
-		Name:             filepath.Base(uploadFile.Name()),
-		Version: &commonmodels.Version{
-			Major:    1,
-			Minor:    0,
-			Patch:    0,
-			Revision: 0,
-			Stage:    commonmodels.Version_Stable,
+		CreateDatasetObjectRequest: &loadmodels.CreateDatasetObjectRequest{
+			ContentLen: stat.Size(),
+			Created:    timestamppb.Now(),
+			Filename:   stat.Name(),
+			Filetype:   ext,
 		},
+		DatasetObjectGroupID: datasetObjectGroupID,
 	}
 
 	initMultipartUploadResponse, err := handler.LoadHandler.InitMultipartUpload(handler.OutGoingContext(), &initUploadRequest)
@@ -226,8 +317,10 @@ func (handler *Handler) UploadFileMultipart(uploadFile *os.File, datasetVersion 
 			return fmt.Errorf("Error while uploading data")
 		}
 
+		correctEtag := strings.ReplaceAll(putResponse.Header["Etag"][0], "\"", "")
+
 		uploadedParts = append(uploadedParts, &loadmodels.CompletedUploadParts{
-			Etag:       putResponse.Header["Etag"][0],
+			Etag:       correctEtag,
 			Partnumber: i,
 		})
 
@@ -235,6 +328,7 @@ func (handler *Handler) UploadFileMultipart(uploadFile *os.File, datasetVersion 
 
 		print(fmt.Sprintf("\rPercentage of bytes uploaded: %.2f%%", percentage))
 	}
+	println()
 
 	_, err = handler.LoadHandler.FinishMultipartUpload(handler.OutGoingContext(), &loadmodels.FinishMultipartUploadRequest{
 		CompletedUploadParts: uploadedParts,
@@ -250,5 +344,10 @@ func (handler *Handler) UploadFileMultipart(uploadFile *os.File, datasetVersion 
 
 // OutGoingContext Creates the required outgoing context for a call
 func (handler *Handler) OutGoingContext() context.Context {
-	return metadata.AppendToOutgoingContext(handler.DefaultGRPCContext, "user_api_token", handler.Token)
+	mdMap := make(map[string]string)
+	mdMap["UserAPIToken"] = handler.Token
+	tokenMetadata := metadata.New(mdMap)
+
+	outgoingContext := metadata.NewOutgoingContext(context.TODO(), tokenMetadata)
+	return outgoingContext
 }

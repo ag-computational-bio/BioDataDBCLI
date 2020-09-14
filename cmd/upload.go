@@ -37,7 +37,7 @@ or in multiple parts to avoid the 4GB limit during upload. Additionally the mult
 			log.Fatalln(err.Error())
 		}
 
-		filepath, err := cmd.Flags().GetString("file")
+		filepaths, err := cmd.Flags().GetStringSlice("files")
 		if err != nil {
 			log.Fatalln(err.Error())
 		}
@@ -47,7 +47,12 @@ or in multiple parts to avoid the 4GB limit during upload. Additionally the mult
 			log.Fatalln(err.Error())
 		}
 
-		err = upload.Upload(token, filepath, datasetVersionID)
+		datasetID, err := cmd.Flags().GetString("dataset")
+		if err != nil {
+			log.Fatalln(err.Error())
+		}
+
+		err = upload.Upload(token, filepaths, datasetID, datasetVersionID)
 		if err != nil {
 			log.Fatalln(err.Error())
 		}
@@ -58,15 +63,21 @@ or in multiple parts to avoid the 4GB limit during upload. Additionally the mult
 func init() {
 	rootCmd.AddCommand(uploadCmd)
 	uploadCmd.Flags().StringP("token", "t", "", "upload token")
-	uploadCmd.Flags().StringP("file", "f", "", "file to upload")
-	uploadCmd.Flags().StringP("datasetversion", "d", "", "datasetversion to associate the datasetobject with")
+	uploadCmd.Flags().StringSliceP("files", "f", []string{}, "files to upload")
+	uploadCmd.Flags().StringP("datasetversion", "v", "", "datasetversion to associate the files with")
+	uploadCmd.Flags().StringP("dataset", "d", "", "dataset to associate the files with")
 
 	err := uploadCmd.MarkFlagRequired("token")
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
 
-	err = uploadCmd.MarkFlagRequired("file")
+	err = uploadCmd.MarkFlagRequired("files")
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+
+	err = uploadCmd.MarkFlagRequired("dataset")
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
