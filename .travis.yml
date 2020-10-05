@@ -1,7 +1,7 @@
 language: go
 go:
 - 1.x
-gobuild_args: -a -ldflags '-extldflags "-static"''
+gobuild_args: -a -ldflags '-extldflags "-static"'
 
 deploy:
   provider: releases
