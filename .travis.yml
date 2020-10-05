@@ -3,11 +3,25 @@ go:
 - 1.x
 gobuild_args: -a -ldflags '-extldflags "-static"'
 
+env:
+  global:
+    - VERSION=$(cat VERSION)
+
+before_deploy:
+  - mkdir -p release
+  - "GOOS=linux  GOARCH=amd64 go build -o release/datahandlercli-v$VERSION-linux-amd64"
+  - "GOOS=darwin GOARCH=amd64 go build -o release/datahandlercli-v$VERSION-darwin-amd64"
+  - "GOOS=windows GOARCH=amd64 go build -o release/datahandlercli-v$VERSION-windows-amd64"
+
 deploy:
   provider: releases
   api_key:
     secure: qQqQI1hRBVvI0gygKBZRO5c/dV7qFhnj8+lbPpOBkJLYIO5OsKTYxGrEbjgyV3SVhjCBAeNGTDDABSngY7r6EP1Y+LlNL9w+3teVyL3j6Wi+eAhiUg2LXdF35WcNOlIVYdTGcIEKmYnHmZDyZ3N/kn9p/z6iJBA4Y7MWa+dI+V7LSUOgtlfenl1Kqi2DPJ5shHxH5iNZzAdNbAgcuZC3NoDNZOnf1hTdr2dGQxUtLZ13zwHAaOI8Z4TBsMFnUynXISY3sglJHEQPjbpT5OLd5Ck4JOR5oz1glJ+mppMSrUMqhL+m6ZsjvFApdGThJmtwPN/nntORmMB2fJLthjvp05qiiGgHYdh2W5KYtjnmTiNaJmpebnwuAevCm3YHQHiL3i8ufWdvkuRQ4p7HfvRXIUU6/ynfuNaGMem5TjoyQWImbVJrEeUH2wzYrfjEtN8lg6oFQ/xcKt/SWuA/UPYWH+N4cBu2jCprB43jYUwM2t0YMD5/fQ1IAGAc7dr6qGR569SJ46LV8v7J2L9nH/qMW8/zmklH07bZmwczW6loaoHY5VTHNW35SFMkY4OiGt/lSUf5I1CUNMpvz40EJDr/YoLZ53vWxs3pCduYOpG7SiNgf9BWWfUzDxmT90QFzH6bmqTQC1mZTcHnI5SxHJ+gFHu2msm3/z3wvq9NVRGcznY=
-  file: datahandlercli
+  
+  file:
+    - "release/datahandlercli-v$VERSION-linux-amd64"
+    - "release/datahandlercli-v$VERSION-darwin-amd64"
+    - "release/datahandlercli-v$VERSION-windows-amd64"
   on:
     repo: ag-computational-bio/BioDataDBCLI
     tags: true
