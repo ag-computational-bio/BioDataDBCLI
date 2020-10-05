@@ -1,4 +1,6 @@
 # DatahandlerCLI
+[![Build Status](https://travis-ci.org/ag-computational-bio/BioDataDBCLI.svg?branch=master)](https://travis-ci.org/ag-computational-bio/BioDataDBCLI)
+
 This is a simple cli application to upload files into the BioDataDB.
 
 The implementation at the moment very rudimentary and mainly used for testing purposes. Additional features will be added in the future.
