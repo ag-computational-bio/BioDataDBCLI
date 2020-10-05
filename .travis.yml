@@ -1,17 +1,17 @@
 language: go
 go:
 - 1.x
-gobuild_args: -a -ldflags '-extldflags "-static"'
 
 env:
   global:
     - VERSION=$(cat VERSION)
+    - CGO_ENABLED=0
 
 before_deploy:
   - mkdir -p release
-  - "GOOS=linux  GOARCH=amd64 go build -o release/datahandlercli-v$VERSION-linux-amd64"
-  - "GOOS=darwin GOARCH=amd64 go build -o release/datahandlercli-v$VERSION-darwin-amd64"
-  - "GOOS=windows GOARCH=amd64 go build -o release/datahandlercli-v$VERSION-windows-amd64"
+  - "GOOS=linux  GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o release/datahandlercli-v$VERSION-linux-amd64"
+  - "GOOS=darwin GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o release/datahandlercli-v$VERSION-darwin-amd64"
+  - "GOOS=windows GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o release/datahandlercli-v$VERSION-windows-amd64"
 
 deploy:
   provider: releases
