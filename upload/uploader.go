@@ -5,7 +5,7 @@ import (
 )
 
 // MinMultipartUploadSize Size at which an upload is performed as a multipart upload rather than a single
-const MinMultipartUploadSize int = 1024 * 1024 * 15
+const MinMultipartUploadSize int = 1024 * 1024 * 1
 
 // Upload Uploads a file
 // Files larger than 15MB will be uploaded as multipart upload

@@ -1,4 +1,4 @@
 Config:
   GRPCEndpoint:
-    Host: localhost
-    Port: 9000
+    Host: api.biodatadb.ingress.rancher2.computational.bio
+    Port: 443

@@ -42,6 +42,8 @@ or in multiple parts to avoid the 4GB limit during upload. Additionally the mult
 			log.Fatalln(err.Error())
 		}
 
+		log.Println(filepaths)
+
 		datasetVersionID, err := cmd.Flags().GetString("datasetversion")
 		if err != nil {
 			log.Fatalln(err.Error())
